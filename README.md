@@ -1,36 +1,32 @@
-# CubeSatellite Adventures
+# CubeSatellite Adventures (V2)
 
-This repository contains the subsystem firmware for a custom CubeSat project, focusing heavily on integrating and stabilizing the Attitude Determination and Control System (ADCS) alongside the On-Board Computer (OBC).
+This repository contains the subsystem firmware for a custom CubeSat project, successfully tested with a complete End-to-End hardware integration architecture. It demonstrates secure data transmission and active subsystem management across multiple nodes.
 
-## Architecture & Subsystems
+## End-to-End Architecture & Subsystems
 
-The system is distributed across multiple microcontrollers (Arduino Nano Every / standard Nano) to ensure stable timing and decoupled logic.
+The system successfully integrates three disjointed components to act synchronously:
 
-### 1. Attitude Determination and Control System (ADCS)
-The ADCS is responsible for tracking the satellite's orientation and executing maneuvers to maintain a sun-facing or earth-facing attitude. 
+### 1. Ground Station (GS)
+The GS is responsible for interfacing with the user over a PC terminal, constructing secure tokenized queries, and catching incoming raw and encoded radio packets via LoRa.
+*   **The Camera Glitch Fix:** The VC0706 Camera downloads its image buffer over the OBC's software serial connection, resulting in thousands of tiny raw binary chunks cascading via LoRa. The Ground Station was originally trying to parse these hex bytes as ASCII strings hunting for the password, throwing catastrophic syntax errors. This was resolved mathematically by pushing failed-token packages straight to the visual output buffer instead of rejecting them. 
+*   **Token Routing Validation:** Successfully implements the `STAFFORDPWROX` validation check on all accepted telemetry.
 
-**Thought Process & Evolution:**
-*   **Binary to Proportional Control:** The original ADCS relied on binary logic (e.g., if the left sun sensor is brightest, apply maximum power counter-clockwise). This was upgraded to a **PID Controller**. By calculating the mathematical error between the left and right sun sensors, the reaction wheel now applies proportional power—slowing down as it approaches perfect alignment to avoid overshooting.
-*   **Object-Oriented Refactoring:** As complexity grew, the massive loop was refactored into modular, encapsulated `structs` (`Motor`, `SunSensors`, `PIDController`, `IMUSensor`, `TemperatureSensor`). This object-oriented approach isolates hardware logic, making it easy to instantiate multiple motors or sensors in the future.
-*   **IMU Integration:** An Adafruit BNO055 was integrated to track absolute 3D orientation (Euler vectors: Yaw, Pitch, Roll) and print telemetry independently from the PID tracking.
-*   **Shake Override:** A safety/testing override was introduced using the IMU. By specifically reading `VECTOR_LINEARACCEL` (which automatically filters out Earth's baseline 9.8m/s² gravity), the system detects sudden external physical impacts and fires the reaction wheel to restabilize, completely interrupting the sun-tracking routine.
+### 2. On-Board Computer (OBC)
+The OBC handles mid-level system aggregation and radio transit logic. 
+*   **Asynchronous Pass-Through Routing:** The OBC solves previous timing bottleneck challenges using elegant delegation. If a user queries `"TEMPOBC"` from the ground, the OBC responds. If the user queries `"SUN"`, the OBC recognizes it isn't the handler for that, and blindly forwards it out of its local port to the ADCS.
+*   **Decoupled Listening:** Once it routes a command to the ADCS, it frees up the loop completely, running its own tasks, only listening to the ADCS occasionally to catch its responses and immediately route them back out the LoRa antenna.
 
-### 2. On-Board Computer (OBC) & Telemetry
-The OBC handles high-level decision making, system-wide data pooling, and LoRa transmission to ground control.
-
-**Thought Process & Evolution:**
-*   **Interrupting Race Conditions:** A critical architectural challenge was inter-board communication. The OBC polls the ADCS for temperature (`TEMPADCS` command) over `SoftwareSerial`. Originally, the OBC checked for a response microseconds after sending the request. A deterministic timing delay was introduced, acknowledging the processing constraints of the ADCS and network latency, guaranteeing stable cross-board data flow.
-*   **LoRa Packet Assembly:** The OBC aggregates local state (uptime counters, battery voltage from A0, OBC temperature) alongside the remote ADCS telemetry, assembling it into a unified string before broadcasting.
+### 3. Attitude Determination and Control System (ADCS)
+The ADCS acts as a fully independent "Server" responsible entirely for physical orientation metrics and motor feedback loops.
+*   **Non-Blocking State Machine:** It incorporates `GPS` via NMEA mapping timeouts, `Sun Sensors`, `Temperature`, and a `Reaction Wheel` on an independent, non-blocking 50hz loop.
+*   **Subsystem Security:** ADCS boots completely disabled (`ADCSStatus = 0`), requiring the explicit command `ENADCS` from ground control to engage hardware operations.
+*   **Toggled Real-Time Processing:** The `GYRO` command engages real-time PID algorithm tracking across the sun sensors to orient the satellite physically in the void.
 
 ## Hardware Stack
-*   **Compute:** Arduino Nano Every (ATmega4809), Arduino Nano
-*   **Sensors:** BNO055 (IMU), LDRs (Sun Sensors), Analog Temperature & Voltage probes
-*   **Actuators:** Single-axis Reaction Wheel driven via PWM
-*   **Comm:** LoRa (430 MHz), SoftwareSerial (Board-to-Board)
-
-## Code Structure Highlights
-*   `ADCSShakeIMUReactionWheelSunSensors`: The flagship ADCS code containing the structurally encapsulated PID loop, IMU tracking, and serial parsing.
-*   `OBCSendReadings`: The main OBC polling and transmission loop.
+*   **Compute:** Arduino Nano Every (ATmega4809), Standard Nanos
+*   **Sensors:** BNO055 (IMU), VC0706 (Serial Camera), LDRs (Sun Sensors), GPS
+*   **Actuators:** Single-axis Reaction Wheel driven via 0-255 PWM
+*   **Comms:** LoRa (434 MHz P2P), Multi-band SoftwareSerial Boards
 
 ---
 *Developed as part of an iterative CubeSat hardware-software integration initiative.*

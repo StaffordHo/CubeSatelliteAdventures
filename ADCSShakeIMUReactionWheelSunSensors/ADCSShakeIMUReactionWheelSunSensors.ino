@@ -197,7 +197,7 @@ void loop() {
       // Reply to the OBC
       OBCSerial.print("TEMPADCS: ");
       OBCSerial.print(currentTemp);
-      OBCSerial.println("°C");
+      OBCSerial.println(" Celsius");
 
       // Print to your local PC screen just so you know it was triggered
       Serial.println(">> Responded to OBC with Temperature! <<");
